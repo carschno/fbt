@@ -71,7 +71,8 @@ def match_tags(sentence):
     tags = list()
     docs = list()
     for token in tokenize(sentence):
-        docs.extend(cache.get(token, list()))
+        if token in cache:
+            docs.extend(cache[token])
 
     #docs = reduce(lambda x, y: x + y, map(find_tags, tokenize(sentence)))
     #docs = reduce(lambda x, y: x + y, map(find_tags_memory, tokens))   # using Memoize
@@ -89,7 +90,7 @@ def match_tags(sentence):
     return tags
 
 
-def build_cache(s, sample_portion=0.1, min_sample=1000, n_status=10):
+def build_cache(s, sample_portion=0.01, min_sample=1000, n_status=10):
     """
     Construct an inverted index tokens/stems -> document indexes
     @param s: a series of texts
@@ -107,7 +108,7 @@ def build_cache(s, sample_portion=0.1, min_sample=1000, n_status=10):
 
     for i in np.random.permutation(s.index)[:limit]:
         counter += 1
-        if counter % int(len(s) / n_status) == 0:
+        if counter % int(limit / n_status) == 0:
             logger.info(asctime() + " {0} of {1} sample documents processed.".format(counter, limit))
         for token in tokenize(s[i]):
             if token in index:
@@ -158,21 +159,21 @@ def main():
     missing = predictions.index[predictions.Tags.isnull()]
     logger.info(asctime() + " Computing {0} missing tags using titles...".format(len(missing)))
 
-    #predictions.Tags[missing] = predictions.Title[missing].map(match_tags)
     # FIXME: job.Parallel seems to get stuck here. Due to global variable data?
     #predictions.Tags[missing] = Parallel(n_jobs=cpus, verbose=5)(delayed(match_tags)(predictions.Title[i]) for i in missing)
 
-    pool = Pool()
-    predictions.Tags[missing] = pool.map(match_tags, predictions.Title[missing])
-    pool.close()
-    pool.join()
+    #predictions.Tags[missing] = predictions.Title[missing].map(match_tags)
+    #pool = Pool(cpus)
+    #predictions.Tags[missing] = pool.map(match_tags, predictions.Title[missing])
+    #pool.close()
+    #pool.join()
 
-    #counter = 0
-    #for i in missing:
-    #    counter += 1
-    #    if counter % 1000 == 0:
-    #        logger.info(asctime() + " {0} of {1} documents processed.".format(counter, len(missing)))
-    #    predictions.Tags[i] = match_tags(predictions.Title[i])
+    counter = 0
+    for i in missing:
+       counter += 1
+       if counter % 1000 == 0:
+           logger.info(asctime() + " {0} of {1} documents processed.".format(counter, len(missing)))
+       predictions.Tags[i] = match_tags(predictions.Title[i])
 
     # TODO consider bodies (on top of titles)
 
@@ -205,6 +206,6 @@ if __name__ == "__main__":
     #    parallel_verbosity = 5
     #    find_tags_memory = Memoize(find_tags, nrows)
     cache = dict()
-    nrows = 10000    # global maximum number of rows to read in read_zip
+    nrows = None    # global maximum number of rows to read in read_zip
 
     main()
