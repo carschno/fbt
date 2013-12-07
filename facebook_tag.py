@@ -3,39 +3,31 @@ import numpy as np
 import csv
 import logging
 import zipfile
-from nltk import PorterStemmer
+from nltk import PorterStemmer, word_tokenize
 from nltk.tokenize.punkt import PunktWordTokenizer
 from nltk.corpus import stopwords
 from time import asctime
 from string import punctuation
 from collections import Counter
-#from os import mkdir
-#from Memoize import Memoize
-from re import escape
-
-from joblib import Memory
-
+from multiprocessing import Pool
 
 __author__ = 'carsten'
-
-nrows = 10000    # globally limit number of rows to read in read_zip
-max_cache = 5000    # cache n first types only, ignore all others
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 logger.addHandler(logging.StreamHandler())
 
-### FOR joblib.Memory
-#cachedir = "/home/carsten/facebook_tags_cache_" + str(nrows) + "docs"
-#logger.info("Creating directory '{0}'.".format(cachedir))
-#try:
-#    mkdir(cachedir)
-#except OSError:
-#    logger.debug("'{0}' already exists.".format(cachedir))
-#memory = Memory(cachedir=cachedir, mmap_mode="r", verbose=0)
-###
 
 def read_zip(zipfilename, filename, cols=None, index_col=None):
+    """
+    Read a CSV file within a zip archive.
+    @param zipfilename: Zip file containing CSV data file
+    @param filename: CSV file name within zip file
+    @param cols: Columns to read from CSV
+    @param index_col: column index to use as index
+    @return: a dataframe containing the CSV file's content
+    @rtype: pd.DataFrame
+    """
     logger.info(asctime() + " Reading {0}/{1}...".format(zipfilename, filename))
     z = zipfile.ZipFile(zipfilename)
     content = pd.read_csv(z.open(filename), index_col=index_col, usecols=cols, quoting=csv.QUOTE_ALL, nrows=nrows)
@@ -62,54 +54,30 @@ def coocurrences(df):
     logger.info(asctime() + " Generating co-occurrence matrix (tokens/tags)...")
     cooc_matrix = pd.DataFrame(index=all_tokens, columns=tags).fillna(0)
     for i in df.index:
-        for token in set(df.Tokens[i]): # segfault here if df.Tokens[i] is list?
+        for token in set(df.Tokens[i]):     # segfault here if df.Tokens[i] is list?
             for tag in df.Tags[i].split():
                 cooc_matrix.ix[token][tag] += 1
-    return cooc_matrix[cooc_matrix > 1] # ignore entries <= 1
+    return cooc_matrix[cooc_matrix > 1]     # ignore entries <= 1
 
 
-#@memory.cache
-def find_tags(token, df=None):
-    """
-    Find all documents containing the token in a Tokens column
-    @param token:
-    @param df:
-    @return:
-    """
-    # TODO: fill cache in advance with random sample?
-    global cache
-    global cachelimit_logged
-    if df is None:
-        df = data
-
-    docs = list()
-    if token in cache:
-        docs = cache[token]
-    # elif len(cache) < max_cache:
-    #     docs = list(df.index[df.Title.str.contains(escape(token), case=False)])
-    #     # for i in df.index:
-    #     #     if token in df.Tokens[i]:
-    #     #         docs.append(i)
-    #     cache[token] = docs
-    # elif not cachelimit_logged:
-    #     logger.info(asctime() + " Cache limit ({0}) reached.".format(max_cache))
-    #     cachelimit_logged = True
-    return docs
-
-
-def match_tags(title):
+def match_tags(sentence):
     """
     Find the tags contained in the documents also containing any of the given tokens and compute the most frequent ones.
-    @param title: A sentence (document title) to be matched.
-    @type title: string
+    @param sentence: A sentence (document title) to be matched.
+    @type sentence: string
     @return: a list of tags
     @rtype list(string)
     """
     tags = list()
-    docs = reduce(lambda x, y: x + y, map(find_tags, tokenize(title)))
+    docs = list()
+    for token in tokenize(sentence):
+        docs.extend(cache.get(token, list()))
+
+    #docs = reduce(lambda x, y: x + y, map(find_tags, tokenize(sentence)))
     #docs = reduce(lambda x, y: x + y, map(find_tags_memory, tokens))   # using Memoize
     if len(docs) > 0:
-        tags = pd.Series(Counter(data.Tags.reindex(docs).sum()))
+        #tags = pd.Series(Counter(data.Tags.reindex(docs).sum()))
+        tags = pd.Series(Counter(data.Tags[docs].sum()))
         #logger.debug("All tags: "+str(tags))
 
         #tags = pd.Series(Counter(reduce(lambda x, y: x + y, map(find_tags, tokens))))
@@ -120,79 +88,98 @@ def match_tags(title):
             tags = list(tags.drop(tags.index[tags < tags.mean()]).index)
     return tags
 
-def build_cache(s, cache_size=100000):
-    """
 
+def build_cache(s, sample_portion=0.1, min_sample=1000, n_status=10):
+    """
+    Construct an inverted index tokens/stems -> document indexes
     @param s: a series of texts
-    @rtype s: pd.Series
-    @return:
+    @type s: pd.Series
+    @param n_status: Number of intermediate status reports during index building
+    @type n_status: int
+    @return:    a dictionary mapping from tokens/stems for document lists
+    @rtype  dict
     """
-    global cachelimit_logged
-    logger.info(asctime() + " Building inverted index from {0} documents with at most {1} entries...".format(len(s), cache_size))
     index = dict()
+    limit = int(len(s) * sample_portion) if len(s) * sample_portion > min_sample else min_sample
+    logger.info(
+        asctime() + " Building inverted index from {0} documents, sample size: {1}".format(len(s), limit))
+    counter = 0
 
-    for i in np.random.permutation(s.index):   # TODO randomize order
+    for i in np.random.permutation(s.index)[:limit]:
+        counter += 1
+        if counter % int(len(s) / n_status) == 0:
+            logger.info(asctime() + " {0} of {1} sample documents processed.".format(counter, limit))
         for token in tokenize(s[i]):
-            if token in index.keys():
+            if token in index:
                 index[token].append(i)
-            elif len(index) < cache_size:
+            else:
                 index[token] = [i]
-            elif not cachelimit_logged:
-                logger.info(asctime() +" Inverted index maximum size {0} reached.".format(len(index)))
-                cachelimit_logged = True
-    return index
+    logger.info(asctime() + " Inverted index contains {0} tokens (stems).".format(len(index)))
+    return index    # return pd.Series instead of dict?
 
 
-
-def tokenize(title):
+def tokenize(title, stem=True):
     """
     Tokenize given text, assuming it is a sentence already. Remove stopwords and punctuation and reduce to stems.
     @param title:
-    @return:
+    @type title: str
+    @return: a list of tokens
+    @rtype: list(str)
     """
     # TODO: instead of stemming, try tokenizing and filtering only. Thus, spare the tokenization of all titles and
     # only check using data.Title.str.contain
     #    return map(_stemmer.stem, filter(lambda x: x not in stopwords.words("english") and x not in punctuation,
     #                                     punkttokenizer.tokenize(title.lower())))
-    return filter(lambda x: x not in stopwords.words("english") and x not in punctuation,
-                  punkttokenizer.tokenize(title.lower()))
+    #tokens = filter(lambda x: x not in stopwords.words("english") and x not in punctuation, punkttokenizer.tokenize(title.lower()))
+    tokens = filter(lambda x: x not in stopwords.words("english") and x not in punctuation,
+                    word_tokenize(title.lower()))
+    return map(stemmer.stem, tokens) if stem else tokens
 
 
 def main():
+    """
+    Read training data and test data, create inverted index, merge data and test data on duplicate titles, compute
+     missing tags using the inverse index, write output to file
+    """
     global data
     global cache
     data = read_zip(trainingzip, trainingfile, cols=columns, index_col=0).drop_duplicates(cols="Title")
 
-    #logger.info(asctime() + " Tokenizing titles...")
-    #data["Tokens"] = data.Title.map(tokenize)
-    #data["Tokens"] = Parallel(n_jobs=cpus, verbose=parallel_verbosity)(
-    #    delayed(tokenize)(data.Title[i]) for i in data.index)
-
     logger.info(asctime() + " Splitting tag strings...")
     data.Tags = data.Tags.map(str.split)
-    #data["Tags"] = Parallel(n_jobs=cpus, verbose=parallel_verbosity)(delayed(str.split)(data.Tags[i]) for i in data.index)
 
-    cache = build_cache(data.Title, max_cache)
+    cache = build_cache(data.Title)
 
     test = read_zip(testzip, testfile, cols=columns)
 
     logger.info(asctime() + " Merging training data and test data...")
     predictions = pd.merge(test, data, on="Title", how="left").sort(columns=["Id"]).drop_duplicates("Id")
 
-    #logger.info(asctime() + " Tokenizing {0} entries with missing tags...".format(sum(predictions.Tags.isnull())))
-    #predictions["Tokens"][predictions.Tags.isnull()] = predictions.Title[predictions.Tags.isnull()].map(tokenize)
-    #predictions["Tokens"][predictions.Tags.isnull()] = Parallel(n_jobs=cpus, verbose=parallel_verbosity)(
-    #    delayed(tokenize)(predictions.Title[i]) for i in predictions.index[predictions.Tags.isnull()])
+    missing = predictions.index[predictions.Tags.isnull()]
+    logger.info(asctime() + " Computing {0} missing tags using titles...".format(len(missing)))
 
-    logger.info(asctime() + " Computing missing tags using titles...")
-    #predictions.Tags[predictions.Tags.isnull()] = predictions.Tokens[predictions.Tags.isnull()].map(match_tags)
-    #predictions.Tags[predictions.Tags.isnull()] = Parallel(n_jobs=cpus, verbose=parallel_verbosity)(
-    #    delayed(match_tags)(predictions.Title[i]) for i in predictions.index[predictions.Tags.isnull()])
-    predictions.Tags[predictions.Tags.isnull()] = predictions.Title[predictions.Tags.isnull()].map(match_tags)
-    # TODO consider bodies + titles
+    #predictions.Tags[missing] = predictions.Title[missing].map(match_tags)
+    # FIXME: job.Parallel seems to get stuck here. Due to global variable data?
+    #predictions.Tags[missing] = Parallel(n_jobs=cpus, verbose=5)(delayed(match_tags)(predictions.Title[i]) for i in missing)
+
+    pool = Pool()
+    predictions.Tags[missing] = pool.map(match_tags, predictions.Title[missing])
+    pool.close()
+    pool.join()
+
+    #counter = 0
+    #for i in missing:
+    #    counter += 1
+    #    if counter % 1000 == 0:
+    #        logger.info(asctime() + " {0} of {1} documents processed.".format(counter, len(missing)))
+    #    predictions.Tags[i] = match_tags(predictions.Title[i])
+
+    # TODO consider bodies (on top of titles)
 
     logger.info(asctime() + " Joining tag lists...")
     predictions.Tags = predictions.Tags.map(" ".join)
+
+    outfile = "/home/carsten/facebook/predictions_{0}documents_{1}tokens.csv".format(nrows, len(cache))
 
     logger.info(asctime() + " Writing predictions to '{0}'...".format(outfile))
     predictions.to_csv(outfile, index=False, cols=("Id", "Tags"), quoting=csv.QUOTE_ALL)
@@ -200,7 +187,7 @@ def main():
 
 
 if __name__ == "__main__":
-    _stemmer = PorterStemmer()
+    stemmer = PorterStemmer()
     punkttokenizer = PunktWordTokenizer()
 
     trainingzip = "/home/carsten/facebook/Train.zip"
@@ -211,8 +198,6 @@ if __name__ == "__main__":
     testfile = "Test.csv"
     testrows = None
 
-    outfile = "/home/carsten/predictions_{0}documents_{1}cache.csv".format(nrows, max_cache)
-
     max_tags = 5    # maximum tags to assign in match_tags
     cpus = 2    # cpus to use when iterating over rows without tags
     #    tagcounts = None    # Series containing all tagcounts
@@ -220,6 +205,6 @@ if __name__ == "__main__":
     #    parallel_verbosity = 5
     #    find_tags_memory = Memoize(find_tags, nrows)
     cache = dict()
-    cachelimit_logged = False   # true after cache limit has been reached the first time
+    nrows = 10000    # global maximum number of rows to read in read_zip
 
     main()
