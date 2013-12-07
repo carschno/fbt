@@ -9,7 +9,6 @@ from nltk.corpus import stopwords
 from time import asctime
 from string import punctuation
 from collections import Counter
-from multiprocessing import Pool
 
 __author__ = 'carsten'
 
@@ -68,29 +67,36 @@ def match_tags(sentence):
     @return: a list of tags
     @rtype list(string)
     """
-    tags = list()
-    docs = list()
+    tags = Counter()
+
     for token in tokenize(sentence):
         if token in cache:
-            docs.extend(cache[token])
+            #docs.extend(cache[token])
+            tags.update(data.Tags[cache[token]].sum())
+
+    tags = pd.Series(tags)
+    tags.sort(ascending=False)
+    tags = tags[:max_tags]
+    tags = list(tags.drop(tags.index[tags < tags.mean()]).index)
+    return tags
 
     #docs = reduce(lambda x, y: x + y, map(find_tags, tokenize(sentence)))
     #docs = reduce(lambda x, y: x + y, map(find_tags_memory, tokens))   # using Memoize
-    if len(docs) > 0:
-        #tags = pd.Series(Counter(data.Tags.reindex(docs).sum()))
-        tags = pd.Series(Counter(data.Tags[docs].sum()))
-        #logger.debug("All tags: "+str(tags))
+    #if len(docs) > 0:
+    #tags = pd.Series(Counter(data.Tags.reindex(docs).sum()))
+    #tags = pd.Series(Counter(data.Tags[docs].sum()))
+    #logger.debug("All tags: "+str(tags))
 
-        #tags = pd.Series(Counter(reduce(lambda x, y: x + y, map(find_tags, tokens))))
-        if len(tags) > 0:
-            tags.sort(ascending=False)
-            tags = tags[:max_tags]
-            #logger.debug("Filtered tags: "+str(tags))
-            tags = list(tags.drop(tags.index[tags < tags.mean()]).index)
-    return tags
+    #tags = pd.Series(Counter(reduce(lambda x, y: x + y, map(find_tags, tokens))))
+    #     if len(tags) > 0:
+    #         tags.sort(ascending=False)
+    #         tags = tags[:max_tags]
+    #         #logger.debug("Filtered tags: "+str(tags))
+    #         tags = list(tags.drop(tags.index[tags < tags.mean()]).index)
+    # return tags
 
 
-def build_cache(s, sample_portion=0.01, min_sample=1000, n_status=10):
+def build_cache(s, sample_portion=0.1, min_sample=1000, n_status=10):
     """
     Construct an inverted index tokens/stems -> document indexes
     @param s: a series of texts
@@ -116,7 +122,7 @@ def build_cache(s, sample_portion=0.01, min_sample=1000, n_status=10):
             else:
                 index[token] = [i]
     logger.info(asctime() + " Inverted index contains {0} tokens (stems).".format(len(index)))
-    return index    # return pd.Series instead of dict?
+    return index    # TODO make this map to a Counter(tags)
 
 
 def tokenize(title, stem=True):
@@ -170,10 +176,10 @@ def main():
 
     counter = 0
     for i in missing:
-       counter += 1
-       if counter % 1000 == 0:
-           logger.info(asctime() + " {0} of {1} documents processed.".format(counter, len(missing)))
-       predictions.Tags[i] = match_tags(predictions.Title[i])
+        counter += 1
+        if counter % 1000 == 0:
+            logger.info(asctime() + " {0} of {1} documents processed.".format(counter, len(missing)))
+        predictions.Tags[i] = match_tags(predictions.Title[i])
 
     # TODO consider bodies (on top of titles)
 
@@ -206,6 +212,6 @@ if __name__ == "__main__":
     #    parallel_verbosity = 5
     #    find_tags_memory = Memoize(find_tags, nrows)
     cache = dict()
-    nrows = None    # global maximum number of rows to read in read_zip
+    nrows = 100000    # global maximum number of rows to read in read_zip
 
     main()
