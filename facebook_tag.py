@@ -4,11 +4,9 @@ import csv
 import logging
 import zipfile
 from nltk import PorterStemmer, word_tokenize, wordpunct_tokenize
-from nltk.tokenize.punkt import PunktWordTokenizer
 from nltk.corpus import stopwords
 from time import asctime
 from string import punctuation
-from collections import Counter
 
 __author__ = 'carsten'
 
@@ -35,30 +33,6 @@ def read_zip(zipfilename, filename, cols=None, index_col=None):
     return content
 
 
-def coocurrences(df):
-    """
-    Create a full coocurrence matrix.
-    @deprecated
-    @param df:
-    @return:
-    """
-    logger.info(asctime() + " Generating token list...")
-    all_tokens = pd.Series(df.Tokens.sum()).drop_duplicates()
-    logger.info(asctime() + " {0} token types found.".format(len(all_tokens)))
-
-    logger.info(asctime() + " Generating tag list...")
-    tags = pd.Series(df.Tags.map(str.split).sum()).drop_duplicates()
-    logger.info(asctime() + " {0} tags found.".format(len(tags)))
-
-    logger.info(asctime() + " Generating co-occurrence matrix (tokens/tags)...")
-    cooc_matrix = pd.DataFrame(index=all_tokens, columns=tags).fillna(0)
-    for i in df.index:
-        for token in set(df.Tokens[i]):     # segfault here if df.Tokens[i] is list?
-            for tag in df.Tags[i].split():
-                cooc_matrix.ix[token][tag] += 1
-    return cooc_matrix[cooc_matrix > 1]     # ignore entries <= 1
-
-
 def match_tags(sentence):
     """
     Find the tags contained in the documents also containing any of the given tokens and compute the most frequent ones.
@@ -70,42 +44,19 @@ def match_tags(sentence):
     tag_series = filter(lambda x: x is not None, map(cache.get, tokenize(sentence)))
 
     if len(tag_series) == 0:
-        logger.debug(asctime() + " Nothing found for '{0}'. Trying wordpunct_tokenize".format(sentence))
-        tag_series = filter(lambda x: x is not None, map(cache.get, wordpunct_tokenize(sentence)))
+        logger.debug(asctime() + " Nothing found for '{0}'. Using tokens from wordpunct_tokenize.  ".format(sentence))
+        tag_series = filter(lambda x: x is not None, map(cache.get, wordpunct_tokenize(sentence.lower())))
         if len(tag_series) == 0:
-            logger.debug(asctime() + "No match found for token {0} either, yielding empty tag list.".format(tag_series))
-        return list()
+            logger.debug(asctime() + " Failed.")
+            return list()
 
     tags = pd.concat(tag_series).groupby(level=0).sum()
-
-    #tags = Counter()
-    # for token in tokenize(sentence):
-    #     if token in cache:
-    #         #docs.extend(cache[token])
-    #         #tags.update(data.Tags[cache[token]].sum())
-    #         tags += cache[token]
-    #tags = pd.Series(tags)
 
     # Find most likely tags in tag series
     tags.sort(ascending=False)
     tags = tags[:max_tags]
     tags = list(tags.drop(tags.index[tags < tags.mean()]).index)
     return tags
-
-    #docs = reduce(lambda x, y: x + y, map(find_tags, tokenize(sentence)))
-    #docs = reduce(lambda x, y: x + y, map(find_tags_memory, tokens))   # using Memoize
-    #if len(docs) > 0:
-    #tags = pd.Series(Counter(data.Tags.reindex(docs).sum()))
-    #tags = pd.Series(Counter(data.Tags[docs].sum()))
-    #logger.debug("All tags: "+str(tags))
-
-    #tags = pd.Series(Counter(reduce(lambda x, y: x + y, map(find_tags, tokens))))
-    #     if len(tags) > 0:
-    #         tags.sort(ascending=False)
-    #         tags = tags[:max_tags]
-    #         #logger.debug("Filtered tags: "+str(tags))
-    #         tags = list(tags.drop(tags.index[tags < tags.mean()]).index)
-    # return tags
 
 
 def build_cache(s, sample_portion=0.01, min_sample=1000, n_status=10):
@@ -135,18 +86,18 @@ def build_cache(s, sample_portion=0.01, min_sample=1000, n_status=10):
             else:
                 index[token] = tags
 
-            # if token not in index:
-            #     index[token] = Counter()
-            # index[token].update(data.Tags[i])
+                # if token not in index:
+                #     index[token] = Counter()
+                # index[token].update(data.Tags[i])
     logger.info(asctime() + " Inverted index contains {0} tokens (stems).".format(len(index)))
     return index    # TODO make this map to a Counter(tags)
 
 
-def tokenize(title, stem=True):
+def tokenize(sentence, stem=True):
     """
     Tokenize given text, assuming it is a sentence already. Remove stopwords and punctuation and reduce to stems.
-    @param title:
-    @type title: str
+    @param sentence:
+    @type sentence: str
     @return: a list of tokens
     @rtype: list(str)
     """
@@ -156,7 +107,7 @@ def tokenize(title, stem=True):
     #                                     punkttokenizer.tokenize(title.lower())))
     #tokens = filter(lambda x: x not in stopwords.words("english") and x not in punctuation, punkttokenizer.tokenize(title.lower()))
     tokens = filter(lambda x: x not in stopwords.words("english") and x not in punctuation,
-                    word_tokenize(title.lower()))
+                    word_tokenize(sentence.lower()))
     return map(stemmer.stem, tokens) if stem else tokens
 
 
