@@ -3,7 +3,7 @@ import numpy as np
 import csv
 import logging
 import zipfile
-from nltk import PorterStemmer, word_tokenize
+from nltk import PorterStemmer, word_tokenize, wordpunct_tokenize
 from nltk.tokenize.punkt import PunktWordTokenizer
 from nltk.corpus import stopwords
 from time import asctime
@@ -67,14 +67,26 @@ def match_tags(sentence):
     @return: a list of tags
     @rtype list(string)
     """
-    tags = Counter()
+    tag_series = filter(lambda x: x is not None, map(cache.get, tokenize(sentence)))
 
-    for token in tokenize(sentence):
-        if token in cache:
-            #docs.extend(cache[token])
-            tags.update(data.Tags[cache[token]].sum())
+    if len(tag_series) == 0:
+        logger.debug(asctime() + " Nothing found for '{0}'. Trying wordpunct_tokenize".format(sentence))
+        tag_series = filter(lambda x: x is not None, map(cache.get, wordpunct_tokenize(sentence)))
+        if len(tag_series) == 0:
+            logger.debug(asctime() + "No match found for token {0} either, yielding empty tag list.".format(tag_series))
+        return list()
 
-    tags = pd.Series(tags)
+    tags = pd.concat(tag_series).groupby(level=0).sum()
+
+    #tags = Counter()
+    # for token in tokenize(sentence):
+    #     if token in cache:
+    #         #docs.extend(cache[token])
+    #         #tags.update(data.Tags[cache[token]].sum())
+    #         tags += cache[token]
+    #tags = pd.Series(tags)
+
+    # Find most likely tags in tag series
     tags.sort(ascending=False)
     tags = tags[:max_tags]
     tags = list(tags.drop(tags.index[tags < tags.mean()]).index)
@@ -96,7 +108,7 @@ def match_tags(sentence):
     # return tags
 
 
-def build_cache(s, sample_portion=0.1, min_sample=1000, n_status=10):
+def build_cache(s, sample_portion=0.01, min_sample=1000, n_status=10):
     """
     Construct an inverted index tokens/stems -> document indexes
     @param s: a series of texts
@@ -117,10 +129,15 @@ def build_cache(s, sample_portion=0.1, min_sample=1000, n_status=10):
         if counter % int(limit / n_status) == 0:
             logger.info(asctime() + " {0} of {1} sample documents processed.".format(counter, limit))
         for token in tokenize(s[i]):
+            tags = pd.Series(1, data.Tags[i])
             if token in index:
-                index[token].append(i)
+                index[token] = pd.concat([index[token], tags])  #.groupby(level=0).sum()
             else:
-                index[token] = [i]
+                index[token] = tags
+
+            # if token not in index:
+            #     index[token] = Counter()
+            # index[token].update(data.Tags[i])
     logger.info(asctime() + " Inverted index contains {0} tokens (stems).".format(len(index)))
     return index    # TODO make this map to a Counter(tags)
 
@@ -195,7 +212,6 @@ def main():
 
 if __name__ == "__main__":
     stemmer = PorterStemmer()
-    punkttokenizer = PunktWordTokenizer()
 
     trainingzip = "/home/carsten/facebook/Train.zip"
     trainingfile = "Train.csv"
@@ -212,6 +228,6 @@ if __name__ == "__main__":
     #    parallel_verbosity = 5
     #    find_tags_memory = Memoize(find_tags, nrows)
     cache = dict()
-    nrows = 100000    # global maximum number of rows to read in read_zip
+    nrows = None    # global maximum number of rows to read in read_zip
 
     main()
