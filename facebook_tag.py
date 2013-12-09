@@ -7,30 +7,13 @@ from nltk import PorterStemmer, word_tokenize, wordpunct_tokenize
 from nltk.corpus import stopwords
 from time import asctime
 from string import punctuation
+from Utils import read_zip
 
 __author__ = 'carsten'
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 logger.addHandler(logging.StreamHandler())
-
-
-def read_zip(zipfilename, filename, cols=None, index_col=None):
-    """
-    Read a CSV file within a zip archive.
-    @param zipfilename: Zip file containing CSV data file
-    @param filename: CSV file name within zip file
-    @param cols: Columns to read from CSV
-    @param index_col: column index to use as index
-    @return: a dataframe containing the CSV file's content
-    @rtype: pd.DataFrame
-    """
-    logger.info(asctime() + " Reading {0}/{1}...".format(zipfilename, filename))
-    z = zipfile.ZipFile(zipfilename)
-    content = pd.read_csv(z.open(filename), index_col=index_col, usecols=cols, quoting=csv.QUOTE_ALL, nrows=nrows)
-    z.close()
-    logger.info(asctime() + " File {0}/{1} read ({2} entries).".format(zipfilename, filename, len(content)))
-    return content
 
 
 def match_tags(sentence):
@@ -59,7 +42,7 @@ def match_tags(sentence):
     return tags
 
 
-def build_cache(s, sample_portion=0.01, min_sample=1000, n_status=10):
+def build_cache(s, sample_portion=0.05, min_sample=1000, n_status=10):
     """
     Construct an inverted index tokens/stems -> document indexes
     @param s: a series of texts
@@ -118,7 +101,7 @@ def main():
     """
     global data
     global cache
-    data = read_zip(trainingzip, trainingfile, cols=columns, index_col=0).drop_duplicates(cols="Title")
+    data = read_zip(trainingzip, trainingfile, cols=columns, index_col=0, count=nrows).drop_duplicates(cols="Title")
 
     logger.info(asctime() + " Splitting tag strings...")
     data.Tags = data.Tags.map(str.split)
@@ -128,7 +111,7 @@ def main():
     test = read_zip(testzip, testfile, cols=columns)
 
     logger.info(asctime() + " Merging training data and test data...")
-    predictions = pd.merge(test, data, on="Title", how="left").sort(columns=["Id"]).drop_duplicates("Id")
+    predictions = pd.merge(test, data, on="Title", how="left", count=nrows).sort(columns=["Id"]).drop_duplicates("Id")
 
     missing = predictions.index[predictions.Tags.isnull()]
     logger.info(asctime() + " Computing {0} missing tags using titles...".format(len(missing)))
