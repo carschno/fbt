@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 from Utils import read_zip
 from collections import Counter
 from time import asctime
@@ -11,7 +12,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 logger.addHandler(logging.StreamHandler())
 
-def count_tags(tag_strings):
+def count_tags(tag_strings, sort=True):
     """
 
     @param tag_strings:
@@ -21,20 +22,25 @@ def count_tags(tag_strings):
     """
     c = Counter()
     for tag_string in tag_strings:
-        if len(c) % 1000 == 0:
-            logger.debug(asctime() + " {0} unique tags found.".format(len(c)))
         c.update(tag_string.split())
-    return pd.Series(c)
+    tags = pd.Series(c, dtype=np.int)
+    if sort:
+        tags.sort(ascending=False)
+    logger.info(tags.describe())
+    return tags
+
+
 
 def main():
-    data = read_zip(trainingzip, trainingfile, cols=["Tags"], count=10000)
+    data = read_zip(trainingzip, trainingfile, cols=["Tags"], count=None)
+    logger.info("{1} Writing cache to {0}.".format(tagcache, asctime()))
     joblib.dump(count_tags(data.Tags), tagcache)
+    logger.info("{0} Done.".format(asctime()))
 
 if __name__ == "__main__":
     trainingzip = "/home/carsten/facebook/Train.zip"
     trainingfile = "Train.csv"
-    #tagcache = "/home/carsten/facebook/cache/tags"
-    tagcache = "/tmp/tags"
+    tagcache = "/home/carsten/facebook/cache/tags"
 
     main()
 

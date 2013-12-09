@@ -149,11 +149,9 @@ if __name__ == "__main__":
 
     trainingzip = "/home/carsten/facebook/Train.zip"
     trainingfile = "Train.csv"
-    trainingrows = None
 
     testzip = "/home/carsten/facebook/Test.zip"
     testfile = "Test.csv"
-    testrows = None
 
     max_tags = 5    # maximum tags to assign in match_tags
     cpus = 2    # cpus to use when iterating over rows without tags
