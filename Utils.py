@@ -24,7 +24,7 @@ def read_data(zipfile, csvfile, lines=None):
     return data, texts
 
 
-def read_zip(zipfilename, filename, cols=None, index_col=None, count=None):
+def read_zip(zipfilename, filename, cols=["Id", "Title", "Body", "Tags"], index_col=None, count=None):
     """
     Read a CSV file within a zip archive.
     @param zipfilename: Zip file containing CSV data file
