@@ -82,7 +82,7 @@ def main():
     missing = predictions.index[predictions.Tags.isnull()]
 
     logger.info(asctime() + " Tokenizing {0} entries from {1} to {2}...".format(
-        len(missing, predictions.Id[missing[0]], predictions.Id[missing[1]])))
+        len(missing), predictions.Id[missing[0]], predictions.Id[missing[1]]))
     tokenize_ = functools.partial(tokenize, tagset=get_tagset(tags))
 
     for indizes in chunks(missing, 10000):
@@ -115,6 +115,6 @@ if __name__ == "__main__":
     tokenizationsindexfile = "/home/carsten/facebook/cache/tokenizationsindex"
     tagcache = "/home/carsten/facebook/cache/tags"
 
-    nrows = 100000
+    nrows = 1000
 
     main()

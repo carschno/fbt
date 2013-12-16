@@ -2,9 +2,12 @@ import pandas as pd
 import csv
 import logging
 from time import asctime
+import itertools
+
 import joblib
 
 from Utils import read_zip
+
 
 __author__ = 'carsten'
 
@@ -18,25 +21,24 @@ def find_tags(token_series, tags, mwes=list(), max_tags=5):
 
     @param token_series: a series representing a document's bag of words
     @type token_series: pd.Series
-    @param mwes: a list of multi-word (multi-token) expressions to be searched in the text
+    @param tags: available tags and frequencies
+    @type tags: pd.Series
+    @param mwes: a list of sets of multi-token tags
     @type mwes: list
     @param max_tags: maximum number or tags assigned to text
     @type max_tags: 5
     @return: a list of tags assigned to the document
     @rtype: list
     """
-    #tokens = dataTokenizer.tokenize(text, tags.index)
-    #token_series = pd.Series(Counter(tokens))   # TODO: normalize token and tag frequencies
-    #counts = pd.Series(0, index=set(tokens))
 
-
-    # TODO: count MWEs
-    #logger.debug("{0} Searching for {1} multi-word expressions...".format(asctime(), len(mwes)))
-    #counts[mwes].map(text.lower().count)
-    #for tag in tags.index:
-    #    counts[tag] = tags[tag] * text.count(tag) + tags[tag] * text.count(tag.replace("-", " "))
-
+    # TODO: normalize frequencies
     counts = (pd.Series(token_series) * tags[token_series.keys()]).dropna()
+
+    mwecounts = dict()
+    for tokens in itertools.ifilter(lambda x: x <= set(token_series.index), mwes):
+    #for tokens in mwes:
+        mwecounts["-".join(tokens)] = (token_series[tokens].sum() * tags[tokens].sum()) / len(tokens)
+    counts = pd.concat((counts, pd.Series(mwecounts).dropna()))
 
     counts.sort(ascending=False)
     counts = counts[counts.notnull()][:max_tags]
@@ -44,20 +46,20 @@ def find_tags(token_series, tags, mwes=list(), max_tags=5):
     return result
 
 
-def mwe(s, char="-"):
+def mwes(s, char="-"):
     """
     Find all multi-word tags in s' index, using char as a separator. E.g.: visual-studio-2010
-    @param s:
+    @param s: a Series of tags
     @type s: pd.Series
-    @param char:
+    @param char: character to detect token separator
     @type char: str
-    @return:
-    @rtype: list
+    @return: a list of lists, containing the tokens of multi-token tags
+    @rtype: list(list(str))
     """
-    mwes = list()
-    for tag in filter(lambda x: char in x, list(s.index)):
-        mwes.append(tag.replace(char, " "))
-    return mwes
+    results = list()
+    for tag in itertools.ifilter(lambda x: char in x, list(s.index)):
+        results.append(set(tag.split(char)))
+    return results
 
 
 def main():
@@ -66,6 +68,7 @@ def main():
 
     logger.info(asctime() + " Reading tag counts from '{0}'...".format(tagcache))
     tags = joblib.load(tagcache, mmap_mode="r")
+    mwe_tags = mwes(tags)
 
     logger.info(asctime() + " Loading tokenizations index from '{0}'...".format(tokenizationsindexfile))
     tokenizationindex = joblib.load(tokenizationsindexfile)
@@ -92,7 +95,7 @@ def main():
             logger.info(asctime() + " Loading indizes for {0} from '{1}'".format(predictions.Id[i],
                                                                                  tokenizationindex[predictions.Id[i]]))
             tokenizations = joblib.load(tokenizationindex[predictions.Id[i]])
-        predictions.Tags[i] = " ".join(find_tags(tokenizations[predictions.Id[i]], tags))
+        predictions.Tags[i] = " ".join(find_tags(tokenizations[predictions.Id[i]], tags, mwe_tags))
 
     outfile = "/home/carsten/facebook/predictions_{0}documents.csv".format(nrows)
 
@@ -111,7 +114,7 @@ if __name__ == "__main__":
     tagcache = "/home/carsten/facebook/cache/tags"
     #tokenizationfile = "/home/carsten/facebook/cache/tokenizations"
     tokenizationsindexfile = "/home/carsten/facebook/cache/tokenizationsindex"
-    nrows = 100000
+    nrows = 100
 
     main()
 
