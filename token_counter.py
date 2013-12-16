@@ -34,11 +34,11 @@ def find_tags(token_series, tags, mwes=list(), max_tags=5):
     # TODO: normalize frequencies
     counts = (pd.Series(token_series) * tags[token_series.keys()]).dropna()
 
-    mwecounts = dict()
-    for tokens in itertools.ifilter(lambda x: x <= set(token_series.index), mwes):
+    #mwecounts = dict()
+    #for tokens in itertools.ifilter(lambda x: x <= set(token_series.index), mwes):
     #for tokens in mwes:
-        mwecounts["-".join(tokens)] = (token_series[tokens].sum() * tags[tokens].sum()) / len(tokens)
-    counts = pd.concat((counts, pd.Series(mwecounts).dropna()))
+    #    mwecounts["-".join(tokens)] = (token_series[tokens].sum() * tags[tokens].sum()) / len(tokens)
+    #counts = pd.concat([counts, pd.Series(mwecounts)])
 
     counts.sort(ascending=False)
     counts = counts[counts.notnull()][:max_tags]
@@ -58,13 +58,13 @@ def mwes(s, char="-"):
     """
     results = list()
     for tag in itertools.ifilter(lambda x: char in x, list(s.index)):
-        results.append(set(tag.split(char)))
+        results.append(tag.split(char))
     return results
 
 
 def main():
     data = read_zip(trainingzip, trainingfile, cols=["Id", "Title", "Tags"], index_col=0, count=nrows).drop_duplicates(
-        cols="Title")
+        cols="Title")   # TODO: take_last=True
 
     logger.info(asctime() + " Reading tag counts from '{0}'...".format(tagcache))
     tags = joblib.load(tagcache, mmap_mode="r")
@@ -88,13 +88,18 @@ def main():
     #predictions[missing] = (predictions.Title[missing] + " " + predictions[missing].map(clean_html)).map(tokenize)
 
     tokenizations = pd.Series()
+    counter = 0
     for i in missing:
-        #predictions.Tags[i] = " ".join(find_tags(predictions.Title[i] + " " + clean_html(predictions.Body[i])))
+        counter += 1
+        if counter % 10000 == 0:
+            logger.info(asctime() + " Done: {0} out of {1}.".format(counter, len(missing)))
+            #predictions.Tags[i] = " ".join(find_tags(predictions.Title[i] + " " + clean_html(predictions.Body[i])))
         #print tokenizations[predictions.Id[i]]
         if predictions.Id[i] not in tokenizations.index:
             logger.info(asctime() + " Loading indizes for {0} from '{1}'".format(predictions.Id[i],
                                                                                  tokenizationindex[predictions.Id[i]]))
             tokenizations = joblib.load(tokenizationindex[predictions.Id[i]])
+            logger.info(asctime() + " '{0}' loaded.".format(tokenizationindex[predictions.Id[i]]))
         predictions.Tags[i] = " ".join(find_tags(tokenizations[predictions.Id[i]], tags, mwe_tags))
 
     outfile = "/home/carsten/facebook/predictions_{0}documents.csv".format(nrows)
@@ -113,8 +118,12 @@ if __name__ == "__main__":
     columns = ["Id", "Title", "Tags"]
     tagcache = "/home/carsten/facebook/cache/tags"
     #tokenizationfile = "/home/carsten/facebook/cache/tokenizations"
+    #tokenizationsindexfile = "/home/carsten/facebook/cache/tokenizationsindex"
+    nrows = None
+
     tokenizationsindexfile = "/home/carsten/facebook/cache/tokenizationsindex"
-    nrows = 100
+    if nrows is not None:
+        tokenizationsindexfile += str(nrows)
 
     main()
 

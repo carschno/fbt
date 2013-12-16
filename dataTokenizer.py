@@ -71,29 +71,27 @@ def main():
 
     logger.info("{0} Reading tags from '{1}...".format(asctime(), tagcache))
     tags = joblib.load(tagcache)
-    data = read_zip(trainingzip, trainingfile, cols=["Id", "Title", "Body", "Tags"], index_col=0,
+    data = read_zip(trainingzip, trainingfile, cols=["Id", "Title", "Tags"], index_col=0,
                     count=nrows).drop_duplicates(cols="Title")
     test = read_zip(testzip, testfile, cols=["Id", "Title", "Body"], count=nrows)
 
     logger.info(asctime() + " Merging training set and test set...")
     predictions = pd.merge(test, data, on="Title", how="left").drop_duplicates("Id")
-    print predictions
 
     missing = predictions.index[predictions.Tags.isnull()]
 
     logger.info(asctime() + " Tokenizing {0} entries from {1} to {2}...".format(
-        len(missing), predictions.Id[missing[0]], predictions.Id[missing[1]]))
+        len(missing), predictions.Id[missing[0]], predictions.Id[missing[-1]]))
     tokenize_ = functools.partial(tokenize, tagset=get_tagset(tags))
 
-    for indizes in chunks(missing, 10000):
-        logger.info(asctime() + " Tokenizing {0} indizes between {1} and {2}...".format(len(indizes),
-                                                                                        predictions.Id[indizes[0]],
-                                                                                        predictions.Id[indizes[-1]]))
+    for indizes in chunks(missing, 50000):
+        logger.info(asctime() + " Tokenizing indizes between {0} and {1}...".format(predictions.Id[indizes[0]],
+                                                                                    predictions.Id[indizes[-1]]))
         outfile = tokenizationsfile + str(indizes[0])
         tokenizationsindex[predictions.Id[indizes[0]]] = outfile
         tokenizations = pd.Series(index=predictions.Id[indizes], dtype="O")
         tokenizations[predictions.Id[indizes]] = (
-            predictions.Title[indizes] + " " + predictions.Body_x[indizes].map(clean_html)).map(tokenize_)
+            predictions.Title[indizes] + " " + predictions.Body[indizes].map(clean_html)).map(tokenize_)
 
         logger.info(
             asctime() + " Writing tokenizations for indizes between {0} and {1} to file '{2}'.".format(
@@ -111,10 +109,10 @@ if __name__ == "__main__":
     trainingfile = "Train.csv"
     testzip = "/home/carsten/facebook/Test.zip"
     testfile = "Test.csv"
-    tokenizationsfile = "/home/carsten/facebook/cache/tokenizations"
-    tokenizationsindexfile = "/home/carsten/facebook/cache/tokenizationsindex"
     tagcache = "/home/carsten/facebook/cache/tags"
 
     nrows = 1000
+    tokenizationsindexfile = "/home/carsten/facebook/cache/tokenizationsindex" + str(nrows)
+    tokenizationsfile = "/home/carsten/facebook/cache/tokenizations" + str(nrows)
 
     main()
