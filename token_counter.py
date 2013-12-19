@@ -3,7 +3,6 @@ import csv
 import logging
 from time import asctime
 import itertools
-
 import joblib
 
 from Utils import read_zip
@@ -16,59 +15,91 @@ logger.setLevel(logging.DEBUG)
 logger.addHandler(logging.StreamHandler())
 
 
-def find_tags(token_series, tags, mwes=list(), max_tags=5):
+def find_tags(document, tags, mwe_i=dict(), max_tags=5):
     """
-
-    @param token_series: a series representing a document's bag of words
-    @type token_series: pd.Series
-    @param tags: available tags and frequencies
+    Compute the n most likely tags for the given bag of wordsin token_series.
+    @param document: a series representing a document bag of words
+    @type document: pd.Series
+    @param tags: all available tags and their frequencies
     @type tags: pd.Series
-    @param mwes: a list of sets of multi-token tags
-    @type mwes: list
+    @param mwe_i: a map from tokens to mwe tags containing them
+    @type mwe_i: dict
     @param max_tags: maximum number or tags assigned to text
     @type max_tags: 5
     @return: a list of tags assigned to the document
     @rtype: list
     """
 
-    # TODO: normalize frequencies
-    counts = (pd.Series(token_series) * tags[token_series.keys()]).dropna()
+    counts = (pd.Series(document) * tags[document.keys()]).dropna()
 
-    #mwecounts = dict()
-    #for tokens in itertools.ifilter(lambda x: x <= set(token_series.index), mwes):
-    #for tokens in mwes:
-    #    mwecounts["-".join(tokens)] = (token_series[tokens].sum() * tags[tokens].sum()) / len(tokens)
-    #counts = pd.concat([counts, pd.Series(mwecounts)])
+    # normalize frequencies:
+    #counts = (pd.Series(token_series.astype(np.float) / token_series.sum()) * tags[token_series.keys()]).dropna()
 
+    counts = pd.concat([counts, find_mwe_tags(document, tags, mwe_i)])
     counts.sort(ascending=False)
     counts = counts[counts.notnull()][:max_tags]
     result = list(counts.drop(counts.index[counts < counts.mean()]).index)
     return result
 
 
-def mwes(s, char="-"):
+def find_mwe_tags(document, tags, mwe_i):
+    # find multi word tags TODO: optimize speed
+    mwecounts = dict()
+    # iterate over all document tokens that occur in mwe index
+    for token in itertools.ifilter(lambda x: x in mwe_i, document.index):
+        # iterate over all mwe tags that contain token
+        for tag in mwe_i[token]:
+            if all(subtag in document.index for subtag in tag.split("-")):
+                # FIXME: this is computed multiple times (for each token in mwe tag)
+                mwecounts[tag] = tags[tag] * (sum(document[tag.split("-")]) / len(tag.split("-")))
+    return pd.Series(mwecounts)
+
+
+def mwes(tags, char="-"):
     """
     Find all multi-word tags in s' index, using char as a separator. E.g.: visual-studio-2010
-    @param s: a Series of tags
-    @type s: pd.Series
+    @param tags: a Series of tags
+    @type tags: pd.Series
     @param char: character to detect token separator
     @type char: str
     @return: a list of lists, containing the tokens of multi-token tags
-    @rtype: list(list(str))
+    @rtype: pd.Index
     """
-    results = list()
-    for tag in itertools.ifilter(lambda x: char in x, list(s.index)):
-        results.append(tag.split(char))
-    return results
+
+    def splitchar(s):
+        return s.split(char)
+
+    mwe_list = filter(lambda x: char in x, tags.index)
+    return pd.Series(map(splitchar, mwe_list), index=mwe_list)
+    #return pd.Series(tags[mwe_index], index=mwe_index)
+
+
+def mwe_index(tags, char="-"):
+    index = dict()
+    for tag in itertools.ifilter(lambda x: char in x, tags.index):
+        for i in tag.split(char):
+            if i not in index:
+                index[i] = list()
+            index[i].append(tag)
+    return index
 
 
 def main():
+    """
+    Main function. Read the test and training data, and tokenization. Apply find_tags for test documents that do not have a
+    duplicate title in the training data to compute tags. Finally, write all results to file.
+    @return: None
+    """
     data = read_zip(trainingzip, trainingfile, cols=["Id", "Title", "Tags"], index_col=0, count=nrows).drop_duplicates(
-        cols="Title")   # TODO: take_last=True
+        cols="Title", take_last=True)   # TODO: take_last=True
 
     logger.info(asctime() + " Reading tag counts from '{0}'...".format(tagcache))
     tags = joblib.load(tagcache, mmap_mode="r")
-    mwe_tags = mwes(tags)
+    # TODO: filter infrequent tags?
+    tags = tags[:len(tags) * 3 / 4]   # remove least frequent tags
+
+    #mwe_tags = mwes(tags)
+    mwe_i = mwe_index(tags)
 
     logger.info(asctime() + " Loading tokenizations index from '{0}'...".format(tokenizationsindexfile))
     tokenizationindex = joblib.load(tokenizationsindexfile)
@@ -89,6 +120,8 @@ def main():
 
     tokenizations = pd.Series()
     counter = 0
+    # normalize tag frequencies
+    #tags = tags.astype(np.float) / tags.sum()
     for i in missing:
         counter += 1
         if counter % 10000 == 0:
@@ -99,13 +132,14 @@ def main():
             logger.info(asctime() + " Loading indizes for {0} from '{1}'".format(predictions.Id[i],
                                                                                  tokenizationindex[predictions.Id[i]]))
             tokenizations = joblib.load(tokenizationindex[predictions.Id[i]])
-            logger.info(asctime() + " '{0}' loaded.".format(tokenizationindex[predictions.Id[i]]))
-        predictions.Tags[i] = " ".join(find_tags(tokenizations[predictions.Id[i]], tags, mwe_tags))
+            logger.info(asctime() + " Done reading '{0}'.".format(tokenizationindex[predictions.Id[i]]))
+            #predictions.Tags[i] = " ".join(find_tags(tokenizations[predictions.Id[i]], tags, mwe_tags))
+        predictions.Tags[i] = " ".join(find_tags(tokenizations[predictions.Id[i]], tags, mwe_i))
 
     outfile = "/home/carsten/facebook/predictions_{0}documents.csv".format(nrows)
 
     logger.info(asctime() + " Writing predictions to '{0}'...".format(outfile))
-    predictions.to_csv(outfile, index=False, cols=["Id", "Tags"], quoting=csv.QUOTE_ALL)
+    predictions.sort(columns="Id").to_csv(outfile, index=False, cols=["Id", "Tags"], quoting=csv.QUOTE_ALL)
     logger.info(asctime() + " Done.")
 
 
