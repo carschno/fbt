@@ -2,12 +2,15 @@ import pandas as pd
 import numpy as np
 import csv
 import logging
-import zipfile
 from nltk import PorterStemmer, word_tokenize, wordpunct_tokenize
 from nltk.corpus import stopwords
 from time import asctime
 from string import punctuation
 from Utils import read_zip
+
+################################################################
+################### This was an early version experimenting with the methods later implemented in token_counter.py
+################################################################
 
 __author__ = 'carsten'
 

@@ -1,7 +1,5 @@
 import logging
-from zipfile import ZipFile
-from pandas import read_csv
-from nltk import clean_html, PorterStemmer, sent_tokenize, word_tokenize
+from nltk import PorterStemmer, sent_tokenize, word_tokenize
 from time import asctime
 import zipfile
 import pandas as pd
@@ -14,17 +12,7 @@ logger.setLevel(logging.DEBUG)
 logger.addHandler(logging.StreamHandler())
 
 
-def read_data(zipfile, csvfile, lines=None):
-    z = ZipFile(zipfile)
-    data = read_csv(z.open(csvfile), nrows=lines)
-    data.Body = data.Body.map(lambda text: text.replace('\n', ' '))
-    if "Tags" in data.columns:
-        data.Tags = data.Tags.map(str.split)
-    texts = (data.Title + " " + data.Body).map(clean_html)
-    return data, texts
-
-
-def read_zip(zipfilename, filename, cols=["Id", "Title", "Body", "Tags"], index_col=None, count=None):
+def read_zip(zipfilename, filename, cols=("Id", "Title", "Body", "Tags"), index_col=None, count=None):
     """
     Read a CSV file within a zip archive.
     @param zipfilename: Zip file containing CSV data file
@@ -44,6 +32,10 @@ def read_zip(zipfilename, filename, cols=["Id", "Title", "Body", "Tags"], index_
 
 
 class NLTKTokenizer(object):
+    """
+    A callable that runs a sentence splitter and tokenizer on input text.
+    """
+
     def __init__(self):
         self.stemmer = PorterStemmer()
 

@@ -1,13 +1,12 @@
-import logging
 import time
-from nltk import PorterStemmer
-
 from sklearn import multiclass, feature_extraction, linear_model
 from sklearn.externals import joblib
 from TrainPredict import taglist
-
 from Utils import *
 
+###################################################
+######### Training a classifier from the training data. Not applicable for the whole data set though.
+###################################################
 
 __author__ = 'carsten'
 
@@ -34,14 +33,10 @@ smooth_idf = True
 processes = -1
 n_features = 2 ** 16
 
-
-
-
-
 if __name__ == "__main__":
     logger.info("Reading training data...")
 
-    data, texts = read_data(zipfile, trainingfile, lines)
+    data, texts = read_zip(zipfile, trainingfile, count=lines)
     vocabulary = taglist(data)
 
     logger.info("Computing document vectors...")

@@ -1,12 +1,11 @@
-import logging
 import time
-import csv
 import sys
-
 from sklearn import multiclass, feature_extraction, preprocessing, tree
-
 from Utils import *
 
+###############################################
+########### Experimenting with classifier and a Hashing vectorizer to save memory. Data set still too large though.
+###############################################
 
 __author__ = 'carsten'
 
@@ -53,7 +52,7 @@ if __name__ == "__main__":
 
     logger.info(time.asctime() + "\tReading training data (first {0} samples)...".format(lines_training))
 
-    data, texts = read_data(trainingzipfile, trainingfile, lines_training)
+    data, texts = read_zip(trainingzipfile, trainingfile, count=lines_training)
     vocabulary = taglist(data)
 
 
@@ -87,7 +86,7 @@ if __name__ == "__main__":
     classifier.fit(X, y)
 
     logger.info(time.asctime() + '\tReading test data...')
-    test, test_texts = read_data(testzipfile, testfile, lines_test)
+    test, test_texts = read_zip(testzipfile, testfile, count=lines_test)
 
     logger.info(time.asctime() + '\tVectorizing test data...')
     test_X = vectorizer.transform(test_texts).toarray()

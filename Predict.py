@@ -1,11 +1,10 @@
-import logging
-
 from sklearn.externals import joblib
-
 from sklearn import feature_extraction
-
 from Utils import *
 
+#########################################################
+######## Experimenting with applying a classifier. Not feasible with the given amount of data though.
+#########################################################
 
 __author__ = 'carsten'
 
@@ -23,10 +22,10 @@ vocabfile = "/home/carsten/facebook/model/vocabulary"
 lines = 10
 use_idf = True
 smooth_idf = True
-n_features = 2**15
+n_features = 2 ** 15
 
 if __name__ == "__main__":
-    data, texts = read_data(zipfile, testfile, lines)
+    data, texts = read_zip(zipfile, testfile, count=lines)
 
     logger.info('Reading model from "{0}" and vocabulary from "{1}"...'.format(modelfile, vocabfile))
     classifier = joblib.load(modelfile)
