@@ -1,4 +1,4 @@
-from nltk import PunktWordTokenizer, PunktSentenceTokenizer, clean_html
+from nltk import PunktSentenceTokenizer, WordPunctTokenizer, clean_html
 import pandas as pd
 import logging
 import itertools
@@ -17,11 +17,13 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.StreamHandler())
 logger.setLevel(logging.DEBUG)
 
-tokenizer = PunktWordTokenizer()
+# adapt output names when changing tokenizer!
+#tokenizer = PunktWordTokenizer()
 sentence_splitter = PunktSentenceTokenizer()
+tokenizer = WordPunctTokenizer()
 
 
-def tokenize(text, tagset):
+def tokenize(text, tagset, splitchar="-"):
     """
     Compute a bag of words of the given text, retaining only the tokens contained in the tagset.
     Performs sentence splitting and tokenization.
@@ -67,19 +69,21 @@ def get_tagset(s, splitchar="-"):
 
 
 def main():
-    tokenizationsindex = dict()
+    """
+    Perform tokenizations for each document in test data that does not have a duplicate title in training data, using
+    the globally defined tokenizer.
+    The results are written to disk in chunks with an additional index file.
+    """
 
+    tokenizationsindex = dict()
     logger.info("{0} Reading tags from '{1}...".format(asctime(), tagcache))
     tags = joblib.load(tagcache)
     data = read_zip(trainingzip, trainingfile, cols=["Id", "Title", "Tags"], index_col=0,
                     count=nrows).drop_duplicates(cols="Title")
     test = read_zip(testzip, testfile, cols=["Id", "Title", "Body"], count=nrows)
-
     logger.info(asctime() + " Merging training set and test set...")
     predictions = pd.merge(test, data, on="Title", how="left").drop_duplicates("Id")
-
     missing = predictions.index[predictions.Tags.isnull()]
-
     logger.info(asctime() + " Tokenizing {0} entries from {1} to {2}...".format(
         len(missing), predictions.Id[missing[0]], predictions.Id[missing[-1]]))
     tokenize_ = functools.partial(tokenize, tagset=get_tagset(tags))
@@ -111,8 +115,9 @@ if __name__ == "__main__":
     testfile = "Test.csv"
     tagcache = "/home/carsten/facebook/cache/tags"
 
-    nrows = 1000
-    tokenizationsindexfile = "/home/carsten/facebook/cache/tokenizationsindex" + str(nrows)
-    tokenizationsfile = "/home/carsten/facebook/cache/tokenizations" + str(nrows)
+    nrows = 10000
+    # adapt output names to tokenizer!
+    tokenizationsindexfile = "/home/carsten/facebook/cache/tokenizationsindex_wordpunct" + str(nrows)
+    tokenizationsfile = "/home/carsten/facebook/cache/tokenizations_wordpunct" + str(nrows)
 
     main()
